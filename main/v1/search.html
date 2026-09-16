@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang=ja>
+    <head>
+        <meta charset=utf-8>
+        <script>
+            //ChaCha20 Algorithm
+class algoEncrypt{
+    #useAlgo="chacha20"
+    #algo={}
+    #support_algo=["chacha20"]
+    #chacha20_constant={constant:new Uint32Array([1634760805,857760878,2036477234,1797285236])}
+    constructor(algorithm="chacha20"){
+        const algo_lower=algorithm.toLowerCase()
+        if (!this.#support_algo.includes(algo_lower)){
+            throw new RangeError(`The algorithm "${algo_lower}" is not supported. The only supported algorithm is " ${this.#support_algo.join(" , ")} ".`)
+        }
+        this.#useAlgo=algo_lower
+        this.#algo={chacha20:{e:this.chacha20_e.bind(this),d:this.chacha20_d.bind(this)}}
+    }
+     /**@param {Uint32Array<8>} secrets @param {Uint32Array<1>} counter @param {Uint32Array<3>} nonce */
+    chacha20_algo(secrets,counter,nonce){
+        function cs(v,s){
+            return (v<<s)|(v>>>(32-s))
+        }
+        function qr(a,b,c,d){
+            a=(a+b)&0xFFFFFFFF
+            d=cs((d^a),16)
+
+            c=(c+d)&0xFFFFFFFF
+            b=cs((b^c),12)
+
+            a=(a+b)&0xFFFFFFFF
+            d=cs((d^a),8)
+
+            c=(c+d)&0xFFFFFFFF
+            b=cs((b^c),7)
+            return [a,b,c,d]
+        }
+        function data_qr(A,B,C,D){
+            const _A=data[Math.floor(A/4)]
+            const _B=data[Math.floor(B/4)]
+            const _C=data[Math.floor(C/4)]
+            const _D=data[Math.floor(D/4)]
+            const ai=A%4
+            const bi=B%4
+            const ci=C%4
+            const di=D%4
+            const [a,b,c,d]=qr(_A[ai],_B[bi],_C[ci],_D[di])
+            _A[ai]=a
+            _B[bi]=b
+            _C[ci]=c
+            _D[di]=d
+        }
+        const constant=this.#chacha20_constant.constant
+        const data_index3=new Uint32Array(4)
+        data_index3.set(counter,0)
+        data_index3.set(nonce,1)
+        const data=[
+            structuredClone(constant),
+            new Uint32Array(secrets.subarray(0,4)),
+            new Uint32Array(secrets.subarray(4,8)),
+            data_index3
+        ]
+        const datacopy=structuredClone(data)
+        for (let i=0;i<10;i++){
+            data_qr(0,4,8,12)
+            data_qr(1,5,9,13)
+            data_qr(2,6,10,14)
+            data_qr(3,7,11,15)
+            data_qr(0,5,10,15)
+            data_qr(1,6,11,12)
+            data_qr(2,7,8,13)
+            data_qr(3,4,9,14)
+        }
+        for (let i=0;i<4;i++){
+            for (let i2=0;i2<4;i2++){
+                data[i][i2]=(data[i][i2]+datacopy[i][i2])&0xFFFFFFFF
+            }
+        }
+        const result=new Uint32Array(16)
+        for (let i=0;i<4;i++){
+            result.set(data[i],i*4)
+        }
+        return result
+    }
+    /**@param {Uint8Array} data @param {Uint32Array|undefined} key */
+    chacha20_e(data,key=undefined,base64=!!Uint8Array.prototype.toBase64){
+        let k=new Uint32Array(8)
+        let d=structuredClone(data)
+        const nonce=crypto.getRandomValues(new Uint32Array(3))
+        if (key===undefined){
+            k.set(crypto.getRandomValues(new Uint32Array(8)),0)
+        }else{
+            k.set(key,0)
+        }
+        for (let i=0;i<Math.ceil(d.length/64);i++){
+            const e=d.subarray(64*i,64*i+64)
+            const algo_out = this.chacha20_algo(k, new Uint32Array([i]), nonce);
+            const chacha20_result = new Uint8Array(algo_out.buffer, algo_out.byteOffset, algo_out.byteLength);
+            for (let j=0;j<e.length;j++){
+                e[j]=e[j]^chacha20_result[j]
+            }
+        }
+        if (base64){
+            //return [d.toBase64(),new Uint8Array(nonce.buffer).toBase64(),new Uint8Array(k.buffer).toBase64()]
+            return {encryptedData:d,encryptedDataBase64:d.toBase64(),nonce:nonce,nonceBase64:new Uint8Array(nonce.buffer).toBase64(),key:k,keyBase64:new Uint8Array(k.buffer).toBase64()}
+        }else{
+            return [d,nonce,k]
+        }
+    }
+    /**@param {Uint8Array} data @param {Uint32Array} key @param {Uint32Array} nonce*/
+    chacha20_d(data,key,nonce_,base64=!!Uint8Array.prototype.toBase64){
+        let k=new Uint32Array(8)
+        k.set(key,0)
+        let nonce=new Uint32Array(3)
+        nonce.set(nonce_,0)
+        let d=structuredClone(data)
+        for (let i=0;i<Math.ceil(d.length/64);i++){
+            const e=d.subarray(64*i,64*i+64)
+            const algo_out = this.chacha20_algo(k, new Uint32Array([i]), nonce);
+            const chacha20_result = new Uint8Array(algo_out.buffer, algo_out.byteOffset, algo_out.byteLength);
+            for (let j=0;j<e.length;j++){
+                e[j]=e[j]^chacha20_result[j]
+            }
+        }
+        if (base64){
+            return d.toBase64()
+        }else{
+            return d
+        }
+    }
+    encrypt(data,key=undefined,base64=!!Uint8Array.prototype.toBase64){
+        let pack=null;
+        if (typeof data==="string"||typeof data==="number"||typeof data==="bigint"){
+            pack=new TextEncoder().encode(data)
+        }else if (data instanceof Uint8Array){
+            pack=data
+        }else if (data instanceof Uint16Array){
+            pack=new Uint8Array(data.buffer)
+        }else if (data instanceof Uint32Array){
+            pack=new Uint8Array(data.buffer)
+        }
+        if (pack===null){
+            return undefined
+        }
+        return this.#algo[this.#useAlgo].e(pack,key,base64)
+    }
+    decrypt(data,key,nonce,base64=!!Uint8Array.prototype.toBase64){
+        let pack=null
+        let k=null
+        let ne=null
+        try{
+            pack=Uint8Array.fromBase64(data)
+        }catch(e){
+            pack=new Uint8Array(data.buffer)
+        }
+        try{
+            k=Uint8Array.fromBase64(key)
+        }catch(e){
+            k=new Uint8Array(key.buffer, key.byteOffset, key.byteLength)
+        }
+        try{
+            ne=Uint8Array.fromBase64(nonce)
+        }catch(e){
+            ne=new Uint8Array(nonce.buffer, nonce.byteOffset, nonce.byteLength)
+        }
+        if (pack===null||k===null||ne===null){
+            return undefined
+        }else{
+            k=structuredClone(new Uint32Array(k.buffer,k.byteOffset,k.byteLength/4))
+            ne=structuredClone(new Uint32Array(ne.buffer,ne.byteOffset,ne.byteLength/4))
+        }
+        return this.#algo[this.#useAlgo].d(pack,k,ne,base64)
+    }
+}
+        </script>
+        <style>
+            /* ==========================================================================
+   1. 全体設定・レイアウト
+   ========================================================================== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  /* フォント優先度: Noto Sans JP -> OS標準sans-serif -> その他OS標準 */
+  font-family: "Noto Sans JP", sans-serif, system-ui;
+}
+
+body {
+  display: flex;
+  flex-direction: column; /* 上下に分割 */
+}
+
+/* ==========================================================================
+   2. 検索ヘッダーエリア (#search)
+   ========================================================================== */
+#search {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px 30px;
+  background-color: #ffffff;
+}
+
+/* ロゴテキスト */
+.search-logo {
+  font-size: 2.25rem;
+  font-weight: bold;
+  color: #202124;
+  margin-bottom: 20px;
+  letter-spacing: -0.5px;
+}
+
+/* 検索フォーム構造 */
+.search-form {
+  width: 100%;
+  max-width: 584px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.search-input-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  width: 20px;
+  height: 20px;
+  fill: #9aa0a6;
+  pointer-events: none;
+}
+
+/* インプットフィールド */
+.search-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 16px 0 48px;
+  font-size: 16px;
+  font-family: inherit;
+  color: #202124;
+  background-color: #ffffff;
+  border: 1px solid #dfe1e5;
+  border-radius: 24px;
+  outline: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.search-input:hover,
+.search-input:focus {
+  border-color: transparent;
+  box-shadow: 0 1px 6px rgba(32, 33, 36, 0.28);
+}
+
+/* ボタンエリア */
+.search-buttons {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+}
+
+.search-btn {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #3c4043;
+  background-color: #f8f9fa;
+  border: 1px solid #f8f9fa;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.search-btn:hover {
+  border-color: #dadce0;
+  background-color: #f8f9fa;
+  color: #202124;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+/* ==========================================================================
+   3. メインエリア (#main)
+   ========================================================================== */
+#main {
+  flex: 1;
+  width: 100%;
+  max-width: 650px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* ==========================================================================
+   4. ログ・状態表示エリア (#search-log)
+   ========================================================================== */
+#search-log {
+  margin-bottom: 20px;
+}
+
+/* hidden属性がついている要素は非表示 */
+.log-item[hidden] {
+  display: none !important;
+}
+
+.log-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  text-align: center;
+  color: #5f6368;
+}
+
+.log-icon {
+  margin-bottom: 16px;
+}
+
+/* ログアイコンの色分岐 */
+.log-warning .log-icon { stroke: #e37400; }
+.log-error .log-icon   { stroke: #d93025; }
+.log-muted .log-icon   { stroke: #80868b; }
+
+/* エラーコード・数値強調バッジ */
+.code-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background-color: #f1f3f4;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #3c4043;
+}
+
+.code-badge strong {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #202124;
+}
+
+/* ==========================================================================
+   5. 検索結果描画エリア (#content-list)
+   ========================================================================== */
+#content-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+/* カード形式リンク */
+.result-card {
+  display: block;
+  padding: 16px 20px;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+}
+
+/* カードホバー時のシャドウ浮き上がり効果 */
+.result-card:hover {
+  border-color: #4285f4;
+  box-shadow: 0 4px 14px rgba(66, 133, 244, 0.15);
+  transform: translateY(-1px);
+}
+
+/* URL表示 */
+.result-url {
+  display: block;
+  font-size: 0.8rem;
+  color: #5f6368;
+  margin-bottom: 6px;
+  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* タイトル設定 */
+.result-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1a0dab;
+  line-height: 1.35;
+  margin-bottom: 8px;
+  transition: color 0.15s ease;
+}
+
+.result-card:hover .result-title {
+  color: #1558d6;
+  text-decoration: underline;
+}
+
+/* 説明文 */
+.result-description {
+  font-size: 0.925rem;
+  color: #4d5156;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+        </style>
+    </head>
+    <body>
+        <div id="search">
+            <div class="search-logo">Search</div>
+                <form class="search-form" action="#" onsubmit="event.preventDefault(); search();">
+                    <div class="search-input-wrapper">
+                    <!-- 検索虫眼鏡アイコン -->
+                    <svg class="search-icon" viewBox="0 0 24 24">
+                        <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                    <!-- 入力フィールド -->
+                    <input type="text" class="search-input" id="search-input" name="q" placeholder="検索キーワードを入力">
+            </div>
+            <!-- 検索ボタン -->
+            <div class="search-buttons">
+                <button type="button" class="search-btn" onclick="search()">検索</button>
+            </div>
+            </form>
+        </div>
+        <div id="main">
+
+            <!-- 1. ログ・状態表示エリア (#search-log) -->
+            <div id="search-log" aria-live="polite">
+
+  <!-- 未入力（searchNoContent）用 -->
+  <div id="log-no-content" class="log-item log-info" hidden>
+    <p>検索キーワードを入力してください。</p>
+  </div>
+
+  <!-- 429 制限エラー（manySearchBlock）用 -->
+  <div id="log-rate-limit" class="log-item log-warning" hidden>
+    <svg class="log-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+      <line x1="12" y1="9" x2="12" y2="13"></line>
+      <line x1="12" y1="17" x2="12" y2="17"></line>
+    </svg>
+    <p>アクセスが集中しています。時間をおいて再度お試しください。<span class="code-badge">Error <strong>429</strong></span></p>
+  </div>
+
+  <!-- 404 見つからない（searchNotFound）用 -->
+  <div id="log-not-found" class="log-item log-muted" hidden>
+    <svg class="log-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      <line x1="8" y1="8" x2="14" y2="14"></line>
+      <line x1="14" y1="8" x2="8" y2="14"></line>
+    </svg>
+    <p>一致する検索結果が見つかりませんでした。<span class="code-badge">Error <strong>404</strong></span></p>
+  </div>
+
+  <!-- 500 サーバーエラー用 -->
+  <div id="log-parse-error" class="log-item log-error" hidden>
+    <svg class="log-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+      <line x1="12" y1="9" x2="12" y2="13"></line>
+      <line x1="12" y1="17" x2="12" y2="17"></line>
+    </svg>
+    <p>サーバーからの応答解析に失敗しました。<span class="code-badge">Error <strong>500</strong></span></p>
+  </div>
+
+  <!-- クライアント側のシステム・パースエラー用 -->
+  <div id="log-system-error" class="log-item log-error" hidden>
+    <svg class="log-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12" y2="16"></line>
+    </svg>
+    <p>検索処理中にエラーが発生しました。</p>
+  </div>
+
+</div>
+
+        <!-- 2. 検索結果描画エリア (#content-list) -->
+        <div id="content-list"></div>
+
+    </div>
+    </body>
+    <script defer>
+        const _=n=>document.getElementById(n)
+        const el={
+            qinput:_("search-input"),
+        }
+        //ERRORLOG:Object{Date.now(),[Error,追加情報...]}
+        const ERRLOG={
+            
+        }
+        /*
+            All Client & JavaScript Search Systemを使う方へ。　　ACJSS Developer's Wiki
+
+            まずはじめに
+
+            この検索システムでは、特定の文字を打たないと正しい検索結果が出ないようにしたいけどサーバーレスで行いたい場合などを想定して作られたシステムです。
+            このシステムでは通常のソースコード閲覧だけでは正解文字列を直接確認できないです(ほぼ無い気がします)
+
+            このシステムは、「ChaCha20」と「SHA-256 / SHA-384」を使って制御を行っています。現代社会で普通に使われている暗号化技術なので信頼性も抜群で高速です。
+        
+            res Objectは検索結果の出力を制御するもの。
+            keyには入力してほしい検索(例:"答え")のSHA-384ハッシュ値を("答え"の場合はb67aa5581f9fcae8a44deeb7ddd07c8259bbe6eb6645a049da99fac9547c1b2f05bfaf67fe0e7ca6c6ca782870e8a0a1)書く。
+            valueは2次元2要素の配列。[nonce,[title,url(FullPath),説明(任意、100文字程度)]]それぞれ以下の手順で暗号化されている。
+                title,url,説明ともに同じ方法で暗号化されている。
+                暗号化/復元化方法(search_sys関数が行っている動作)
+                1. データをUTF-8エンコードする(new TextEncoder().encode)
+                2. 入力してほしい検索(例:"答え")の"SHA-256"ハッシュ値("答え"の場合は3fa509879d6361f21739c0a9f7077af197fd375949da82dcdecbcbe2b1c92cd1)をChaCha20の「秘密鍵」とする。(Uint8Array.fromHexで戻すこと)　復元化の場合は入力をハッシュ化する
+                3. nonceは引数の1番目。
+                4. new algoEncrypt("chacha20").decrypt(data,key,nonce,false)を実行する。(decryptなのはnonceを指定するため)
+                5. new TextDecoder("utf-8").decodeで戻す。
+                6. Arrayとしてパースする。
+
+            このシステムは、すべての処理にHex(16進数)を採用しております。お手数おかけしますが、resに記述の際には全てHexで書いてください。(でないと動きません)
+
+            https://ks-seed0310.github.io/chacha20_1/webscreen/webEncrypt/v1.0.1.html
+
+            このサイトでは文字を秘密鍵にできるプログラムが組まれているので開発にもってこいだと思います。是非お使いください。
+        */
+        
+        const res={
+            //example:["3bf6b05a9a509579c15b770a","89997312...(Hex)"]
+            "768412320f7b0aa5812fce428dc4706b3cae50e02a64caa16a782249bfe8efc4b7ef1ccb126255d196047dfedf17a0a9":[
+                "9deaa4355934d942f070d330",
+                "70beb3977ceecff51d99a65e06d12fa0338f1000d3eff9d82e591c90e24e231e5b4d7e4588436ce82f3886a3cc4d3c2d08dd85f604c03ccf7915ee9d7c42a5291a8d146653328c1ff6fa8b953da5e6e3ea0be3828a780fac6f06611b8a24c777d86c73129a8b0c9e03614cfced86ef8c04511d63d2382e640a226dcf8b4dbcb58bc139f4f09081fc30ae927927d80d06e720739ab10413e8d886128212f7dc5d5ce9c7d8f37b7ae523f289e874d630d66fc14a881c"
+            ],//←"test"っていう文字(テストケース)
+            "9bdbe817c23d4e2096d874eee96c86c8058b2e8432d0e2d3cb9d6c1c2a4da68c52c8442cc030db2950e6544b6a1ec9ea":[
+                "52eeb63162f91dc11b3e647e",
+                "e20de06ec0d91f52736f7cb364a5510d36edeee64d54743c838601da3fec81116cd8d57992fca49e8d2b04998614df2cc42ab5f7f28fe374de13db8fe736e599146f6776221aa80d6bc4"
+            ],//←わざとエラーを出すテストケース("error"が鍵です。)
+            "96fd02f78758ae9d418feb871df005460fada2b6a0a83b731842fcf5ce717490413423a18e8806bfde10f132d153367b":[
+                "7321cd048d6fe05f81c7034c",
+                "1d0554d51688eb1f6c39b04e53d16ee54aaba51baf122aa9477e0a97300a9c7694f5f682d366024b5234aa6fb74a4c6355701d59ea301a1aa119049ff8829f61f3fe994510d46c1408bac13f"
+            ],//←通常のテストケース("test2")
+            "b20591380bb594ea40f1ff6db6e7ebe96b13d62a40471827ccab6fe059d31f923f52f373300309a09d4a4314fc8d9b4e":[
+                "84df6631196a73ee8ec0f9bc",
+                "8fc85a1deb5615846b0e53db44e10a575a289923b9ac53b32056f285bc5df39d5b255fb889dfe7db5525c4ac77c823714e22f5f6bbde7232fe2b5855a9f051fe68ca3a1b70340563d454e7247fa485f2e21fd8e4e1fc6971731ffbe70fcfcd4a8e5e3bd89bb7f9d2e1"
+            ],//自動化ツールで作ったテストケース("dopa")
+        }
+        const encoder=new TextEncoder()
+        const decoder=new TextDecoder("utf-8")
+        const chacha20=new algoEncrypt("chacha20")
+        function sha(v,e="SHA-256"){return crypto.subtle.digest(e,v)}
+        function sha256(v){return sha(v,"SHA-256")}
+        function sha384(v){return sha(v,"SHA-384")}
+        function sha512(v){return sha(v,"SHA-512")}
+        function sha256_hex(v){return sha256(v).then(x=>new Uint8Array(x).toHex())}
+        function sha384_hex(v){return sha384(v).then(x=>new Uint8Array(x).toHex())}
+        function sha512_hex(v){return sha512(v).then(x=>new Uint8Array(x).toHex())}
+        function sha256_str(s){return sha256(encoder.encode(s))}
+        function sha384_str(s){return sha384(encoder.encode(s))}
+        function sha512_str(s){return sha512(encoder.encode(s))}
+        function sha256_strhex(s){return sha256_hex(encoder.encode(s))}
+        function sha384_strhex(s){return sha384_hex(encoder.encode(s))}
+        function sha512_strhex(s){return sha512_hex(encoder.encode(s))}
+        const limitlvl=[//間違った回数スコアがkey未満の場合の再実行ペナルティms(総当り防止)用(3秒ごとにこのスコアは1減る)
+            [2,0],
+            [10,500],
+            [15,1000],
+            [20,2000],
+            [25,3500],
+            [30,5500],
+            [35,8000],
+            [40,11000],
+            [45,14500],
+            [50,18500],
+            [55,23000],
+            [60,28000],
+            [65,33500],
+            [70,39500],
+            [75,46000],
+            [80,53000],
+            [85,60500],
+            [90,68500],
+            [95,77000],
+        ]
+        Object.freeze(limitlvl)
+        const user=JSON.parse(localStorage.getItem("/searchsys/saves/userdata.json"))??{
+            lastSearch:0,
+            notfound:0,
+            found:0,
+            nf_score:0,
+        }
+        if (typeof user!=="object"){
+            localStorage.setItem("/searchsys/saves/userdata.json",JSON.stringify({
+                lastSearch:0,
+                notfound:0,
+                found:0,
+                nf_score:0,
+            }))
+        }
+        user.lastSearch=Date.now()-100000
+        user.nf_score+=1
+        localStorage.setItem("/searchsys/saves/userdata.json",JSON.stringify(user))
+        const scoreSub_sys=setInterval(function(){
+            user.nf_score=user.nf_score-1<0?0:user.nf_score-1
+        },3000)
+        const autoSave_sys=setInterval(function(){
+            localStorage.setItem("/searchsys/saves/userdata.json",JSON.stringify(user))
+        },5000)
+        function search_start(){
+            document.body.style.cursor="wait"
+        }
+        function search_end(){
+            document.body.style.cursor="auto"
+        }
+        function getLimit(){
+            for (const [l,t] of limitlvl){
+                if (user.nf_score<l){
+                    return t
+                }
+            }
+            return 100000
+        }
+        /*
+            search_sys関数の出力は、Responce Classで返されます。
+            具体的には以下が対応しています。
+                
+            status:httpステータスコードが表示されます。
+            statusText:一応、付けてます。
+            ok:あります。
+            headers:headersの「url」が仮想URLになっており、そこから発行元が分かります。(.headers.get("author")で取得できます。)
+
+            仮想URL(発行元)
+            Base: author.sys.output/sys::authors/
+            manySearchBlock: Error 429を吐くシステム
+            searchNotFound: 見つからなかったときはここから出てきます
+            searchNoContent: 何も入っていなかったときはここから出てきます
+            searchAllSuccess: 成功
+            500_dataParseError: データのデコードに失敗
+
+            出力について
+
+            .jsonと.textはできることを確認済みです(その他は知りません)
+
+            response.json/response.textの出力
+            ok:trueでstatus:200の場合(Array<Array<string>> Array<string>が[title,url(FullPath),説明(任意、100文字程度)]という構造になっていてそれが続いている)中身があります。
+            ok:falseの場合:[]が返ってきます。何もないです。(エラー防止用)
+        */
+        // エラーログ保持用オブジェクトの宣言（既に定義されている場合は既存のものを利用）
+
+// エラーログ保持用オブジェクト
+window.ERRLOG = window.ERRLOG || {};
+
+async function search() {
+  if (typeof search_start === 'function') {
+    search_start();
+  }
+
+  const inputEl = document.getElementById('search-input');
+  const query = inputEl ? inputEl.value.trim() : '';
+
+  const logNoContent = document.getElementById('log-no-content');
+  const logRateLimit = document.getElementById('log-rate-limit');
+  const logNotFound = document.getElementById('log-not-found');
+  const logParseError = document.getElementById('log-parse-error');
+  const logSystemError = document.getElementById('log-system-error');
+  const contentList = document.getElementById('content-list');
+
+  const clearLogs = () => {
+    [logNoContent, logRateLimit, logNotFound, logParseError, logSystemError].forEach(el => {
+      if (el) el.setAttribute('hidden', '');
+    });
+  };
+
+  clearLogs();
+  if (contentList) contentList.innerHTML = '';
+
+  try {
+    const response = await search_sys(query);
+    const author = response.headers ? (response.headers.get('author') || '') : '';
+
+    if (author.includes('manySearchBlock') || response.status === 429) {
+      if (logRateLimit) logRateLimit.removeAttribute('hidden');
+
+    } else if (author.includes('searchNoContent')) {
+      if (logNoContent) logNoContent.removeAttribute('hidden');
+
+    } else if (author.includes('500_dataParseError') || response.status === 500) {
+      // サーバー側のデコードエラー (HTTP 500)
+      if (logParseError) logParseError.removeAttribute('hidden');
+
+    } else if (author.includes('searchNotFound') || response.status === 404 || !response.ok) {
+      if (logNotFound) logNotFound.removeAttribute('hidden');
+
+    } else if (author.includes('searchAllSuccess') || (response.ok && response.status === 200)) {
+      let data = [];
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        // クライアント側でのパース失敗：普通のエラーログとして処理
+        window.ERRLOG[Date.now()] = parseErr;
+        console.warn('レスポンスJSONの解析失敗:', parseErr);
+        if (logSystemError) logSystemError.removeAttribute('hidden');
+        return;
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        const fragment = document.createDocumentFragment();
+
+        data.forEach(item => {
+          const [title, url, description = ''] = item;
+
+          const cardEl = document.createElement('a');
+          cardEl.className = 'result-card';
+          cardEl.href = url;
+          cardEl.target = '_blank';
+          cardEl.rel = 'noopener noreferrer';
+
+          const urlEl = document.createElement('span');
+          urlEl.className = 'result-url';
+          urlEl.textContent = url;
+
+          const titleEl = document.createElement('h3');
+          titleEl.className = 'result-title';
+          titleEl.textContent = title;
+
+          const descEl = document.createElement('p');
+          descEl.className = 'result-description';
+          descEl.textContent = description;
+
+          cardEl.appendChild(urlEl);
+          cardEl.appendChild(titleEl);
+          cardEl.appendChild(descEl);
+
+          fragment.appendChild(cardEl);
+        });
+
+        if (contentList) contentList.appendChild(fragment);
+      } else {
+        if (logNotFound) logNotFound.removeAttribute('hidden');
+      }
+    }
+  } catch (error) {
+    window.ERRLOG[Date.now()] = error;
+    console.warn('検索実行エラー:', error);
+
+    if (logSystemError) logSystemError.removeAttribute('hidden');
+  } finally {
+    if (typeof search_end === 'function') {
+      search_end();
+    }
+  }
+}
+        async function search_sys(query=null){
+            if (Date.now()-getLimit()<user.lastSearch){
+                user.nf_score+=0.5
+                console.log("429 Too Many Requests.")
+                search_end()
+                /*return {
+                    ok:false,
+                    status:429,
+                    json:[],
+                };*/
+                return new Response("[]",{ok:false,status:429,statusText:"Too Many Requests.",headers:{author:"author.sys.output/sys::authors/manySearchBlock"}})
+            }
+            const q=query??el.qinput.value
+            if (!q){
+                search_end()
+                /*return {
+                    ok:false,
+                    
+                    json:[],
+                };*/
+                return new Response("[]",{ok:false,status:200,statusText:"No Content",headers:{author:"author.sys.output/sys::authors/searchNoContent"}})
+            }
+            user.lastSearch=Date.now()
+            const res_k=await sha384_strhex(q)
+            if (!res[res_k]){
+                // 検索結果が存在しない場合の処理
+                console.log("404 Not Found ",q)
+                user.notfound++
+                user.nf_score++
+                search_end()
+                /*return {
+                    ok:false,
+                    status:404,
+                    json:[],
+                };*/
+                return new Response("[]",{ok:false,status:404,statusText:"Not Found",headers:{author:"author.sys.output/sys::authors/searchNotFound"}})
+            }
+            //data variable: [nonce,[title,url(FullPath),説明(任意、100文字程度)]]
+            const data=res[res_k]
+            const key=new Uint8Array(await sha256_str(q))
+            const nonce=Uint8Array.fromHex(data[0])
+            const maindata_e=Uint8Array.fromHex(data[1])
+            //console.log(data,key,nonce,maindata_e)
+            const maindata_t=chacha20.decrypt(maindata_e,key,nonce,false)
+            //console.log(maindata_t)
+            const maindata=(function(){
+                try{
+                    return JSON.parse(decoder.decode(maindata_t))
+                }catch(e){
+                    console.warn("ERR::DECODE_DATA_PARSE_ERROR\n\tabout: maindata parse failed.\n\tat: function:search\n\t")
+                    ERRLOG[Date.now()]=[e,"user_search_words:'"+q+"'"]
+                    return "ERR::DECODE_DATA_PARSE_ERROR"
+                }
+            })()
+            if (typeof maindata==="string"){
+                if (maindata==="ERR::DECODE_DATA_PARSE_ERROR"){
+                    return new Response("[]",{ok:false,status:500,statusText:"Internal Server Error",headers:{author:"author.sys.output/sys::authors/500_dataParseError"}})
+                }
+            }
+            //console.log(maindata)
+            user.found++
+            /*return {
+                ok:true,
+                status:200,
+                json:[maindata],//1つ括っているのは、いつかアップデートして複数の検索結果が出てきた時そのまま使える用
+            }*/
+            //console.log(maindata)
+            return new Response(JSON.stringify([maindata]),{ok:true,status:200,statusText:"OK",headers:{author:"author.sys.output/sys::authors/searchAllSuccess"}})
+        }
+
+        !async function(){
+            const p=new URLSearchParams(location.search)
+            const q=p.get("q")
+            if (q){
+                el.qinput.value=q
+                await new Promise(r=>setTimeout(r,100))
+                await search()
+            }
+        }().then(x=>{
+            user.lastSearch=Date.now()+2000
+            user.nf_score+=2
+            localStorage.setItem("/searchsys/saves/userdata.json",JSON.stringify(user))
+        })
+    </script>
+</html>
