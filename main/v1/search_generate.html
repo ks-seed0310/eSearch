@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang=ja>
+    <head>
+        <meta charset=utf-8>
+        <style>
+            .circ_input{
+                border: 1px solid #dfe1e5;
+                border-radius: 24px;
+                padding: 8px 16px;
+                margin: 0px;
+                font-family:'Noto Sans JP' !important;
+                margin-top:16px;
+                margin-bottom:8px;
+                width:90%;
+            }
+            body{
+                max-width:100vw;
+                min-height:100vh;
+                padding-left:16px;
+            }
+            .notallow_c{
+                cursor:not-allowed !important;
+            }
+            .textarea_c{
+                cursor:text;
+            }
+            .input_set{
+                
+            }
+            #data_input{
+                margin-left:8px;
+            }
+            .rc{
+                color:red;
+            }
+            .anchor_blue{
+                color:rgb(20,120,200);
+                font-size:1.2rem;
+            }
+            #output_v{
+                position:relative;
+                border: 2px solid #dfe1e5;
+                min-height:16rem;
+                overflow-y:auto;
+                overflow-x:auto;
+                -webkit-overflow-scrolling: touch;
+                min-width:90%;
+                white-space:nowrap;
+            }
+            .output_v_child{
+                width:max-content;
+                padding-left:8px;
+                height:max-content;
+            }
+            .out_focus{
+                background-color:#cbe4fa;
+            }
+            
+        </style>
+    </head>
+    <body>
+        <!--
+            element attributeにcontenteditableを付けるとdivとかでも編集可能になる。
+        -->
+        <p>Search System v1 Generator</p>
+        <div id="data_input">
+            <p><span class=rc>[*]</span> は必須項目</p>
+            <span id="data_title_set">
+                <span class=rc>[*]</span> 検索結果タイトル : <br />
+                <input id="data_title" class="circ_input textarea_c" oninput="g('data_title_counter').textContent=this.value.length+' 文字'" /><br />
+                <span id="data_title_counter">0 文字</span>
+            </span>
+            <br />
+            <span id="data_url_set">
+                <span class=rc>[*]</span> 検索結果移動先URL(絶対パス) : <br />
+                <input id="data_url" class="circ_input textarea_c" oninput="g('data_url_counter').textContent=this.value.length+' 文字'" /><br />
+                <span id="data_url_counter">0 文字</span>
+            </span>
+            <br />
+            <span id="data_desc_set">検索結果説明文(100文字程度/HTML使えません) : <br />
+                <div id="data_desc" class="circ_input textarea_c" oninput="g('data_desc_counter').textContent=this.textContent.length+' 文字'" contenteditable></div><br />
+                <span id="data_desc_counter">0 文字</span>
+            </span>
+            <br />
+            <span id="data_key_set">
+                <span class=rc>[*]</span> 秘密鍵(パスワード。どの入力でもSHA-256ハッシュ化して使われます。一番最後にスペースとか混ぜないように。(鍵が変わります。)) : <br />
+                <input id="data_key" class="circ_input textarea_c" oninput="g('data_key_counter').textContent=this.value.length+' 文字'" /><br />
+                <span id="data_key_counter">0 文字</span>
+            </span>
+        </div>
+        <br style="font-size:1.5rem;" />
+        <div id="menu_area">
+            <details>
+                <summary>Menu</summary>
+                <a id="menu_start" class="anchor_blue" href="javascript:void 0">開始</a>
+                <a id="menu_copy" class="anchor_blue" href="javascript:void 0">コピー</a>
+                <a id="menu_remove" class="anchor_blue" href="javascript:void 0">選択した要素を削除</a>
+                <a id="menu_load" class="anchor_blue" href="javascript:void 0">読み込み</a>
+            </details>
+        </div>
+        <br />
+        <div id="output_area">
+            <div id="output_print">
+                <span>{</span>
+                <br />
+                <div id="output_v">
+                    
+                </div>
+                <br />
+                <span>}</span>
+            </div>
+        </div>
+        <script>
+            const g=_=>document.getElementById(_)
+            const el={
+                title_i:g("data_title"),
+                url_i:g("data_url"),
+                desc_i:g("data_desc"),
+                key_i:g("data_key"),
+                start_m:g("menu_start"),
+                copy_m:g("menu_copy"),
+                remove_m:g("menu_remove"),
+                load_m:g("menu_load"),
+                output_o:g("output_v"),
+                outputall_o:g("output_print")
+            }
+            function sha(v,e="SHA-256"){return crypto.subtle.digest(e,v)}
+            function sha256(v){return sha(v,"SHA-256")}
+            function sha384(v){return sha(v,"SHA-384")}
+            function sha512(v){return sha(v,"SHA-512")}
+            function sha256_hex(v){return sha256(v).then(x=>new Uint8Array(x).toHex())}
+            function sha384_hex(v){return sha384(v).then(x=>new Uint8Array(x).toHex())}
+            function sha512_hex(v){return sha512(v).then(x=>new Uint8Array(x).toHex())}
+            function sha256_str(s){return sha256(encoder.encode(s))}
+            function sha384_str(s){return sha384(encoder.encode(s))}
+            function sha512_str(s){return sha512(encoder.encode(s))}
+            function sha256_strhex(s){return sha256_hex(encoder.encode(s))}
+            function sha384_strhex(s){return sha384_hex(encoder.encode(s))}
+            function sha512_strhex(s){return sha512_hex(encoder.encode(s))}
+            const encoder=new TextEncoder()
+            const decoder=new TextDecoder()
+            let chacha20
+            let init_ok=false
+            let outputid_counter=0
+            let output_focusid="result_0"
+            async function copy_t(text,quiet=false){
+                if(!quiet&&!text){alert("コピーするものがありません。");return}
+                try{
+                    await navigator.clipboard.writeText(text)
+                    if (!quiet)alert("コピー成功: "+text)
+                }catch(e){
+                    if (!quiet)alert("コピー失敗: "+text)
+                }
+            }
+            function init(){
+                chacha20=new algoEncrypt("chacha20")
+                Object.freeze(chacha20)
+                init_ok=true
+            }
+            function focusChange(elementid){
+                output_focusid=elementid
+                const focusidx=elementid
+                const node=[...el.output_o.childNodes].filter(x=>x.id)
+                node.forEach(x=>{
+                    if (x.id===focusidx){
+                        x.classList.add("out_focus")
+                    }else{
+                        x.classList.remove("out_focus")
+                    }
+                })
+            }
+            focusChange(0)
+            function create_add(res){
+                const addel=el.output_o
+                const opt_top=document.createElement("div")
+                const opt=document.createElement("span")
+                opt.textContent=`"${res[0]}":${JSON.stringify(res[1])},`
+                opt_top.id="result_"+outputid_counter
+                outputid_counter++
+                opt_top.classList.add("output_v_child")
+                opt_top.append(opt)
+                addel.append(opt_top)
+                opt_top.addEventListener("click",()=>{focusChange(opt_top.id)})
+            }
+            async function create(parameter={title:el.title_i.value,url:el.url_i.value,desc:el.desc_i.innerText,key:el.key_i.value}){
+                const _title=parameter.title
+                const _url=parameter.url
+                const _desc=parameter.desc
+                const _key=parameter.key
+                if (!init_ok)init()
+                if (!_title)alert("検索結果タイトルを入力してください。")
+                if (!_url)alert("検索結果移動先URLを入力してください。")
+                if (!_key)alert("鍵を入力してください。")
+                if (!_title||!_url||!_key)return 1
+                const [key,idx]=await (async function(s){
+                    return [new Uint8Array(await sha256_str(s)),await sha384_strhex(s)]
+                })(_key)
+                const nonce=crypto.getRandomValues(new Uint8Array(12))
+                const data=encoder.encode(JSON.stringify([_title,_url,_desc]))
+                const res=chacha20.decrypt(data,key,nonce,false)
+                const res_h=res.toHex()
+                const nonce_h=nonce.toHex()
+                //const package=JSON.stringify({[idx]:[nonce_h,res_h]})
+                const package=[idx,[nonce_h,res_h]]
+                console.log(package)
+                
+                if (create_add)create_add(package)
+            }
+            el.start_m.addEventListener("click",function(e){create()})
+            el.copy_m.addEventListener("click",function(e){copy_t(JSON.stringify(JSON.parse(el.outputall_o.textContent.replace(/\,\s*\}\s*$/,"\}")),"",4)
+)})
+            el.remove_m.addEventListener("click",async function(e){
+                const el=document.getElementById(output_focusid)
+                if (!el)return;
+                const el_text_300p=el.textContent.length>300
+                const question_text=el_text_300p?el.textContent.slice(0,300)+"...":el.textContent
+                if (confirm("削除しますか?　削除される要素:\n"+question_text)){
+                    el.remove()
+                    await new Promise(r=>setTimeout(r,50))
+                    alert("削除しました。")
+                }
+            })
+            el.load_m.addEventListener("click",function(e){
+                const i=prompt("JSONを入力してください。")
+                /**
+                    [[SHA-384 Hash,EncryptedData]...]
+                */
+                let json;
+                try{
+                    json=Object.entries(JSON.parse(i))
+                }catch(e){
+                    alert("ERR::JSON_PARSE_ERROR\n\n\n"+e)
+                }
+                json.forEach(create_add)
+            })
+
+
+
+
+
+
+            
+            //ChaCha20 Algorithm
+class algoEncrypt{
+    #useAlgo="chacha20"
+    #algo={}
+    #support_algo=["chacha20"]
+    #chacha20_constant={constant:new Uint32Array([1634760805,857760878,2036477234,1797285236])}
+    constructor(algorithm="chacha20"){
+        const algo_lower=algorithm.toLowerCase()
+        if (!this.#support_algo.includes(algo_lower)){
+            throw new RangeError(`The algorithm "${algo_lower}" is not supported. The only supported algorithm is " ${this.#support_algo.join(" , ")} ".`)
+        }
+        this.#useAlgo=algo_lower
+        this.#algo={chacha20:{e:this.chacha20_e.bind(this),d:this.chacha20_d.bind(this)}}
+    }
+     /**@param {Uint32Array<8>} secrets @param {Uint32Array<1>} counter @param {Uint32Array<3>} nonce */
+    chacha20_algo(secrets,counter,nonce){
+        function cs(v,s){
+            return (v<<s)|(v>>>(32-s))
+        }
+        function qr(a,b,c,d){
+            a=(a+b)&0xFFFFFFFF
+            d=cs((d^a),16)
+
+            c=(c+d)&0xFFFFFFFF
+            b=cs((b^c),12)
+
+            a=(a+b)&0xFFFFFFFF
+            d=cs((d^a),8)
+
+            c=(c+d)&0xFFFFFFFF
+            b=cs((b^c),7)
+            return [a,b,c,d]
+        }
+        function data_qr(A,B,C,D){
+            const _A=data[Math.floor(A/4)]
+            const _B=data[Math.floor(B/4)]
+            const _C=data[Math.floor(C/4)]
+            const _D=data[Math.floor(D/4)]
+            const ai=A%4
+            const bi=B%4
+            const ci=C%4
+            const di=D%4
+            const [a,b,c,d]=qr(_A[ai],_B[bi],_C[ci],_D[di])
+            _A[ai]=a
+            _B[bi]=b
+            _C[ci]=c
+            _D[di]=d
+        }
+        const constant=this.#chacha20_constant.constant
+        const data_index3=new Uint32Array(4)
+        data_index3.set(counter,0)
+        data_index3.set(nonce,1)
+        const data=[
+            structuredClone(constant),
+            new Uint32Array(secrets.subarray(0,4)),
+            new Uint32Array(secrets.subarray(4,8)),
+            data_index3
+        ]
+        const datacopy=structuredClone(data)
+        for (let i=0;i<10;i++){
+            data_qr(0,4,8,12)
+            data_qr(1,5,9,13)
+            data_qr(2,6,10,14)
+            data_qr(3,7,11,15)
+            data_qr(0,5,10,15)
+            data_qr(1,6,11,12)
+            data_qr(2,7,8,13)
+            data_qr(3,4,9,14)
+        }
+        for (let i=0;i<4;i++){
+            for (let i2=0;i2<4;i2++){
+                data[i][i2]=(data[i][i2]+datacopy[i][i2])&0xFFFFFFFF
+            }
+        }
+        const result=new Uint32Array(16)
+        for (let i=0;i<4;i++){
+            result.set(data[i],i*4)
+        }
+        return result
+    }
+    /**@param {Uint8Array} data @param {Uint32Array|undefined} key */
+    chacha20_e(data,key=undefined,base64=!!Uint8Array.prototype.toBase64){
+        let k=new Uint32Array(8)
+        let d=structuredClone(data)
+        const nonce=crypto.getRandomValues(new Uint32Array(3))
+        if (key===undefined){
+            k.set(crypto.getRandomValues(new Uint32Array(8)),0)
+        }else{
+            k.set(key,0)
+        }
+        for (let i=0;i<Math.ceil(d.length/64);i++){
+            const e=d.subarray(64*i,64*i+64)
+            const algo_out = this.chacha20_algo(k, new Uint32Array([i]), nonce);
+            const chacha20_result = new Uint8Array(algo_out.buffer, algo_out.byteOffset, algo_out.byteLength);
+            for (let j=0;j<e.length;j++){
+                e[j]=e[j]^chacha20_result[j]
+            }
+        }
+        if (base64){
+            //return [d.toBase64(),new Uint8Array(nonce.buffer).toBase64(),new Uint8Array(k.buffer).toBase64()]
+            return {encryptedData:d,encryptedDataBase64:d.toBase64(),nonce:nonce,nonceBase64:new Uint8Array(nonce.buffer).toBase64(),key:k,keyBase64:new Uint8Array(k.buffer).toBase64()}
+        }else{
+            return [d,nonce,k]
+        }
+    }
+    /**@param {Uint8Array} data @param {Uint32Array} key @param {Uint32Array} nonce*/
+    chacha20_d(data,key,nonce_,base64=!!Uint8Array.prototype.toBase64){
+        let k=new Uint32Array(8)
+        k.set(key,0)
+        let nonce=new Uint32Array(3)
+        nonce.set(nonce_,0)
+        let d=structuredClone(data)
+        for (let i=0;i<Math.ceil(d.length/64);i++){
+            const e=d.subarray(64*i,64*i+64)
+            const algo_out = this.chacha20_algo(k, new Uint32Array([i]), nonce);
+            const chacha20_result = new Uint8Array(algo_out.buffer, algo_out.byteOffset, algo_out.byteLength);
+            for (let j=0;j<e.length;j++){
+                e[j]=e[j]^chacha20_result[j]
+            }
+        }
+        if (base64){
+            return d.toBase64()
+        }else{
+            return d
+        }
+    }
+    encrypt(data,key=undefined,base64=!!Uint8Array.prototype.toBase64){
+        let pack=null;
+        if (typeof data==="string"||typeof data==="number"||typeof data==="bigint"){
+            pack=new TextEncoder().encode(data)
+        }else if (data instanceof Uint8Array){
+            pack=data
+        }else if (data instanceof Uint16Array){
+            pack=new Uint8Array(data.buffer)
+        }else if (data instanceof Uint32Array){
+            pack=new Uint8Array(data.buffer)
+        }
+        if (pack===null){
+            return undefined
+        }
+        return this.#algo[this.#useAlgo].e(pack,key,base64)
+    }
+    decrypt(data,key,nonce,base64=!!Uint8Array.prototype.toBase64){
+        let pack=null
+        let k=null
+        let ne=null
+        try{
+            pack=Uint8Array.fromBase64(data)
+        }catch(e){
+            pack=new Uint8Array(data.buffer)
+        }
+        try{
+            k=Uint8Array.fromBase64(key)
+        }catch(e){
+            k=new Uint8Array(key.buffer, key.byteOffset, key.byteLength)
+        }
+        try{
+            ne=Uint8Array.fromBase64(nonce)
+        }catch(e){
+            ne=new Uint8Array(nonce.buffer, nonce.byteOffset, nonce.byteLength)
+        }
+        if (pack===null||k===null||ne===null){
+            return undefined
+        }else{
+            k=structuredClone(new Uint32Array(k.buffer,k.byteOffset,k.byteLength/4))
+            ne=structuredClone(new Uint32Array(ne.buffer,ne.byteOffset,ne.byteLength/4))
+        }
+        return this.#algo[this.#useAlgo].d(pack,k,ne,base64)
+    }
+}
+        </script>
+    </body>
+</html>
