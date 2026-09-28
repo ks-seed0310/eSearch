@@ -35,7 +35,7 @@
       const u=new URLSearchParams(location.search).get("path")??"blank.txt"
       const U=new URL(u,document.baseURI)
       document.getElementById("gi").innerHTML=`<span style="color:green">${U.href}</span> をダウンロードします...(ダウンロードが開始されない場合は<a href="javascript:fileDownload(U)">こちら</a>を押してください。)`
-      fileDownload(U)
+      window.addEventListener("load",()=>{fileDownload(U)})
     </script>
   </body>
 </html>
