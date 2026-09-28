@@ -20,7 +20,7 @@
       ]
       let messageRecept=(e)=>{}
       window.addEventListener("message",e=>{
-        if (!allow.includes(e.origin)){console.log("status_",403),return 403}
+        if (!allow.includes(e.origin)){console.log("status_",403);return 403}
         messageRecept(e)
       })
       const f={
