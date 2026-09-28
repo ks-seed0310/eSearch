@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang=ja>
+  <head>
+    <meta charset=utf-8>
+  </head>
+  <body>
+    <div id="frames">
+      <iframe src="https://ochcinfo.github.io/_fileapi/iframe/download/v1/get.html" id="frame_ochc"></iframe>
+    </div>
+    <p id="gi"></p>
+    <a id="dl" download></a>
+    <script>
+      const allow=[
+        "https://ks-seed0310.github.io",
+        "http://ks-seed0310.github.io",
+        "https://ochcinfo.github.io",
+        "http://ochcinfo.github.io",
+        "https://ioself.github.io",
+        "http://ioself.github.io"
+      ]
+      let messageRecept=(e)=>{}
+      window.addEventListener("message",e=>{
+        if (!allow.includes(e.origin)){console.log("status_",403),return 403}
+        messageRecept(e)
+      })
+      const f={
+        main:document.getElementById("frames"),
+        ochc:document.getElementById("frame_ochc"),
+      }
+      const d=document.getElementById("dl")
+      const p=document.getElementById("gi")
+      const u=new URLSearchParams(location.search).get("path")??"blank.txt"
+      const U=new URL(u,document.baseURI)
+      async function main(){
+        p.innerHTML=`<span style="color:green">${U.href}</span> をダウンロードします...(ダウンロードが開始されない場合は<a href=${u} download>こちら</a>を押してください。)`
+        if (U.origin==="https://ochcinfo.github.io"||U.origin==="http://ochcinfo.github.io"){
+          const resolv=0
+          const res=await new Promise(r=>{
+            messageRecept=(e)=>{
+              console.log(e)
+              r(200)
+            }
+            f.ochc.contentWindow.postMessage({url:U},U.origin)
+          })
+        }else{
+          d.href=u
+          d.click()
+        }
+      }
+    </script>
+  </body>
+</html>
