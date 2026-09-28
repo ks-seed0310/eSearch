@@ -40,7 +40,7 @@
               console.log(e)
               r(200)
             }
-            f.ochc.contentWindow.postMessage({url:U.href},U.origin)
+            f.ochc.contentWindow.postMessage({url:U.href,author:"corsFileDownload",author2:"ParentNode"},U.origin)
           })
         }else{
           d.href=u
