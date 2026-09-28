@@ -24,18 +24,21 @@
         ochc:document.getElementById("frame_ochc"),
         ioself:document.getElementById("frame_ioself")
       }
-      let messageChildWindow={
-        "https://ks-seed0310.github.io":window,
-        "http://ks-seed0310.github.io":window,
-        "https://ochcinfo.github.io":f.ochc.contentWindow,
-        "http://ochcinfo.github.io":f.ochc.contentWindow,
-        "https://ioself.github.io":f.ioself.contentWindow,
-        "http://ioself.github.io":f.ioself.contentWindow,
-      }
+      let messageChildWindow;
       const u=new URLSearchParams(location.search).get("path")??"blank.txt"
       const U=new URL(u,document.baseURI)
       document.getElementById("gi").innerHTML=`<span style="color:green">${U.href}</span> をダウンロードします...(ダウンロードが開始されない場合は<a href="javascript:fileDownload(U)">こちら</a>を押してください。)`
-      window.addEventListener("load",()=>{fileDownload(U)})
+      window.addEventListener("load",()=>{
+        messageChildWindow={
+          "https://ks-seed0310.github.io":window,
+          "http://ks-seed0310.github.io":window,
+          "https://ochcinfo.github.io":f.ochc.contentWindow,
+          "http://ochcinfo.github.io":f.ochc.contentWindow,
+          "https://ioself.github.io":f.ioself.contentWindow,
+          "http://ioself.github.io":f.ioself.contentWindow,
+        }
+        fileDownload(U)
+      })
     </script>
   </body>
 </html>
