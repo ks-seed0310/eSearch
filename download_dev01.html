@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang=ja>
+  <head>
+    <meta charset=utf-8>
+  </head>
+  <body>
+    <div id="frames">
+      <iframe src="https://ochcinfo.github.io/_fileapi/iframe/download/v2/get.html" id="frame_ochc" style="width:1px;height:1px;visibility:hidden;"></iframe>
+      <iframe src="https://ioself.github.io/_fileapi/iframe/download/v2/get.html" id="frame_ioself" style="width:1px;height:1px;visibility:hidden;"></iframe>
+    </div>
+    <p id="gi"></p>
+    <script defer src="https://ks-seed0310.github.io/corsfile-download/v1/parent.js"></script>
+    <script>
+      let messageAllow=[
+        "https://ks-seed0310.github.io",
+        "http://ks-seed0310.github.io",
+        "https://ochcinfo.github.io",
+        "http://ochcinfo.github.io",
+        "https://ioself.github.io",
+        "http://ioself.github.io"
+      ]
+      const f={
+        main:document.getElementById("frames"),
+        ochc:document.getElementById("frame_ochc"),
+        ioself:document.getElementById("frame_ioself")
+      }
+      let messageChildWindow={
+        "https://ks-seed0310.github.io":window,
+        "http://ks-seed0310.github.io":window,
+        "https://ochcinfo.github.io":f.ochc.contentWindow,
+        "http://ochcinfo.github.io":f.ochc.contentWindow,
+        "https://ioself.github.io":f.ioself.contentWindow,
+        "http://ioself.github.io":f.ioself.contentWindow,
+      }
+      const u=new URLSearchParams(location.search).get("path")??"blank.txt"
+      const U=new URL(u,document.baseURI)
+      document.getElementById("gi").innerHTML=`<span style="color:green">${U.href}</span> をダウンロードします...(ダウンロードが開始されない場合は<a href="javascript:fileDownload(U)">こちら</a>を押してください。)`
+      fileDownload(U)
+    </script>
+  </body>
+</html>
