@@ -40,13 +40,14 @@
               console.log(e)
               r(200)
             }
-            f.ochc.contentWindow.postMessage({url:U},U.origin)
+            f.ochc.contentWindow.postMessage({url:U.href},U.origin)
           })
         }else{
           d.href=u
           d.click()
         }
       }
+      main()
     </script>
   </body>
 </html>
